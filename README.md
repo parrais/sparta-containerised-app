@@ -21,6 +21,7 @@
   - [Create Kubernetes Horizontal Pod Autoscaler](#create-kubernetes-horizontal-pod-autoscaler)
   - [Set up nginx reverse proxy](#set-up-nginx-reverse-proxy)
   - [Seed the database](#seed-the-database)
+  - [Set up minikube automatic restart](#set-up-minikube-automatic-restart)
 
 ## Overview
 
@@ -611,10 +612,20 @@ Metrics Server collects resource data and is needed for autoscaling to function.
 Seeding the database requires running the seeding command on one of the Sparta Test App pods.
 
 - Get the IDs of the Sparta Test App pods:
+
   ```bash
   kubectl get pod -l app=sparta-app
   ```
-- Pass the command to seed the database to one of the pods using its alphanumeric ID in the previous output:
+
+  Expected output:
+
+  ```
+  NAME                                     READY   STATUS    RESTARTS   AGE
+  sparta-app-deployment-84b5cc845f-sx6wb   1/1     Running   0          69m
+  sparta-app-deployment-84b5cc845f-wrlns   1/1     Running   0          41m
+  ```
+
+- Pass the command to seed the database to one of the pods using its full alphanumeric ID in the previous output:
 
   ```bash
   kubectl exec -it pod/sparta-app-deployment-<pod-id> -- npm run postinstall
@@ -636,32 +647,56 @@ Seeding the database requires running the seeding command on one of the Sparta T
 
   ![Sparta Test App posts page](images/screenshots/aws-sparta-posts.png)
 
-<!-- PROGRESS MARKER -->
+### Set up minikube automatic restart
+
+As standard, `minikube start` must be run after the instance restarts to make the app available. systemd can be used to ensure that minikube starts automatically.
+
+- Create a systemd service file for minikube:
+
+  ```bash
+  sudo nano /etc/systemd/system/minikube.service
+  ```
+
+  with the following content:
+
+  `minikube.service`
+
+  ```
+  [Unit]
+  Description=Minikube Start Service
+  After=docker.service
+
+  [Service]
+  Type=oneshot
+  RemainAfterExit=yes
+  User=ubuntu
+  Group=ubuntu
+  ExecStart=/usr/local/bin/minikube start
+  ExecStop=/usr/local/bin/minikube stop
+
+  [Install]
+  WantedBy=multi-user.target
+  ```
+
+  Apply the new config and ensure it runs on restart:
+
+  ```bash
+  sudo systemctl daemon-reload
+  sudo systemctl enable minikube.service
+  ```
 
 <!--
+## Testing
 
-- minikube restarts on reboot
-  - `sudo nano /etc/systemd/system/minikube.service`
+### Automatic restarting
 
-    ```
-    [Unit]
-    Description=Minikube Start Service
-    After=docker.service
+### Self-healing
 
-    [Service]
-    Type=oneshot
-    RemainAfterExit=yes
-    User=ubuntu
-    Group=ubuntu
-    ExecStart=/usr/local/bin/minikube start
-    ExecStop=/usr/local/bin/minikube stop
+### Persistent data
 
-    [Install]
-    WantedBy=multi-user.target
-    ```
+### Autoscaling
 
-  - `sudo systemctl daemon-reload`
-  - `sudo systemctl enable minikube.service`
+
 
 
 - Load testing

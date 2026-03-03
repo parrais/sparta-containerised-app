@@ -1,0 +1,51 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: sparta-db-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 100Mi
+  storageClassName: standard
+  volumeName: sparta-db-pv
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sparta-db-svc
+spec:
+  type: ClusterIP
+  ports:
+    - port: 27017
+      targetPort: 27017
+  selector:
+    app: sparta-db
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sparta-db-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sparta-db
+  template:
+    metadata:
+      labels:
+        app: sparta-db
+    spec:
+      volumes:
+        - name: sparta-db-storage
+          persistentVolumeClaim:
+            claimName: sparta-db-pvc
+      containers:
+        - name: sparta-db
+          image: mongo:7.0.6
+          ports:
+            - containerPort: 27017
+          volumeMounts:
+            - name: sparta-db-storage
+              mountPath: /data/db

@@ -15,6 +15,7 @@
   - [Create Amazon Machine Image (AMI)](#create-amazon-machine-image-ami)
   - [Create Sparta Test App EC2 instance](#create-sparta-test-app-ec2-instance)
   - [Install Kubernetes Metrics Server](#install-kubernetes-metrics-server)
+  - [Create Persistent Volume](#create-persistent-volume)
 
 ## Overview
 
@@ -53,7 +54,7 @@ The following process was used to get local Sparta Test App files built into a D
 
 - With the [Sparta Test App](https://github.com/LSF970/se-sparta-test-app) files in an `app` subdirectory, put the following `Dockerfile` in the parent directory:
 
-  `Dockerfile`
+  [`Dockerfile`](docker/Dockerfile)
 
   ```Dockerfile
   # from which image
@@ -286,14 +287,52 @@ Metrics Server collects resource data and is needed for autoscaling to function.
   NAME             READY   UP-TO-DATE   AVAILABLE   AGE
   metrics-server   1/1     1            1           79s
   ```
-- <!-- PROGRESS MARKER -->
+
+### Create Persistent Volume
+
+- Create a Kubernetes configuration file in `~/sparta-k8s/` for a PV of 100 MiB:
+  ```bash
+  mkdir sparta-k8s
+  nano sparta-k8s/sparta-db-pv.yml
+  ```
+  with the following content:
+  [`sparta-db-pv.yml`](kubernetes/sparta-db-pv.yml)
+  ```yaml
+  apiVersion: v1
+  kind: PersistentVolume
+  metadata:
+    name: sparta-db-pv
+  spec:
+    accessModes:
+      - ReadWriteOnce
+    capacity:
+      storage: 100Mi
+    storageClassName: standard
+    hostPath:
+      path: '/mnt/data'
+  ```
+- Create the PV:
+  ```bash
+  kubectl apply -f sparta-k8s/sparta-db-pv.yml
+  ```
+- Check PV created OK:
+  ```bash
+  kubectl get pv
+  ```
+  Expected output:
+  ```
+  NAME           CAPACITY   ACCESS MODES   RECLAIM POLICY   STATUS      CLAIM   STORAGECLASS   VOLUMEATTRIBUTESCLASS   REASON   AGE
+  sparta-db-pv   100Mi      RWO            Retain           Available           standard       <unset>                          15s
+  ```
+
+<!-- PROGRESS MARKER -->
 
 <!-- - Set up prerequisites
   - scp YAML files to EC2
 
 
 - Start kubernetes services
-  - `kubectl apply -f sparta-db-pv.yml`
+
   - `kubectl apply -f sparta-db-pvc-service-deploy.yml`
   - `kubectl apply -f sparta-app-service-deploy.yml`
   - `kubectl apply -f sparta-app-hpa.yml`

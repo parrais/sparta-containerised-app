@@ -2,7 +2,7 @@
 FROM node:20-alpine
 
 # label
-LABEL MAINTAINER="mlewis@spartaglobal.com"
+LABEL MAINTAINER="<e-mail address>"
 
 # set the default working directory to /usr/src/app
 WORKDIR /usr/src/app

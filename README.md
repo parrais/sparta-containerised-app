@@ -18,6 +18,7 @@
   - [Create Kubernetes Persistent Volume](#create-kubernetes-persistent-volume)
   - [Create Kubernetes database deployment, service, and PVC](#create-kubernetes-database-deployment-service-and-pvc)
   - [Create Kubernetes Sparta Test App deployment and service](#create-kubernetes-sparta-test-app-deployment-and-service)
+  - [Create Kubernetes Horizontal Pod Autoscaler](#create-kubernetes-horizontal-pod-autoscaler)
 
 ## Overview
 
@@ -295,12 +296,16 @@ Metrics Server collects resource data and is needed for autoscaling to function.
 ### Create Kubernetes Persistent Volume
 
 - Create a Kubernetes configuration file in `~/sparta-k8s/` for a PV of 100 MiB:
+
   ```bash
   mkdir sparta-k8s
   nano sparta-k8s/sparta-db-pv.yml
   ```
+
   with the following content:
+
   [`sparta-db-pv.yml`](kubernetes/sparta-db-pv.yml)
+
   ```yaml
   apiVersion: v1
   kind: PersistentVolume
@@ -315,6 +320,7 @@ Metrics Server collects resource data and is needed for autoscaling to function.
     hostPath:
       path: '/mnt/data'
   ```
+
 - Create the PV:
   ```bash
   kubectl apply -f sparta-k8s/sparta-db-pv.yml
@@ -335,11 +341,15 @@ Metrics Server collects resource data and is needed for autoscaling to function.
   - Create a persistent volume claim to the PV just created
   - Create a ClusterIP service (as this does not allow access from outside the Kubernetes cluster)
   - Create a deployment for a single pod with the MongoDB image
+
   ```bash
   nano sparta-k8s/sparta-db-pvc-service-deploy.yml
   ```
+
   with the following content:
+
   [`sparta-db-pvc-service-deploy.yml`](kubernetes/sparta-db-pvc-service-deploy.yml)
+
   ```yaml
   apiVersion: v1
   kind: PersistentVolumeClaim
@@ -393,45 +403,35 @@ Metrics Server collects resource data and is needed for autoscaling to function.
               - name: sparta-db-storage
                 mountPath: /data/db
   ```
+
 - Create the PVC, service, and deployment:
   ```bash
   kubectl apply -f sparta-k8s/sparta-db-pvc-service-deploy.yml
   ```
-- Check all created OK with `kubectl get` commands:
+- Check all created OK:
 
-  `kubectl get pv`
-
-  ```
-  NAME           CAPACITY   ACCESS MODES   RECLAIM POLICY   STATUS   CLAIM                   STORAGECLASS   VOLUMEATTRIBUTESCLASS   REASON   AGE
-  sparta-db-pv   100Mi      RWO            Retain           Bound    default/sparta-db-pvc   standard       <unset>                          22m
+  ```bash
+  kubectl get pv,pvc,svc,deploy,pod
   ```
 
-  `kubectl get pvc`
+  Expected output:
 
   ```
-  NAME            STATUS   VOLUME         CAPACITY   ACCESS MODES   STORAGECLASS   VOLUMEATTRIBUTESCLASS   AGE
-  sparta-db-pvc   Bound    sparta-db-pv   100Mi      RWO            standard       <unset>                 20s
-  ```
+  NAME                            CAPACITY   ACCESS MODES   RECLAIM POLICY   STATUS   CLAIM                   STORAGECLASS   VOLUMEATTRIBUTESCLASS   REASON   AGE
+  persistentvolume/sparta-db-pv   100Mi      RWO            Retain           Bound    default/sparta-db-pvc   standard       <unset>                          22m
 
-  `kubectl get svc sparta-db-svc`
+  NAME                                  STATUS   VOLUME         CAPACITY   ACCESS MODES   STORAGECLASS   VOLUMEATTRIBUTESCLASS   AGE
+  persistentvolumeclaim/sparta-db-pvc   Bound    sparta-db-pv   100Mi      RWO            standard       <unset>                 20s
 
-  ```
-  NAME            TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)     AGE
-  sparta-db-svc   ClusterIP   10.110.62.246   <none>        27017/TCP   32s
-  ```
+  NAME                     TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)          AGE
+  service/kubernetes       ClusterIP   10.96.0.1       <none>        443/TCP          5d23h
+  service/sparta-db-svc    ClusterIP   10.110.62.246   <none>        27017/TCP        32s
 
-  `kubectl get deploy`
+  NAME                                    READY   UP-TO-DATE   AVAILABLE   AGE
+  deployment.apps/sparta-db-deployment    1/1     1            1           36s
 
-  ```
-  NAME                   READY   UP-TO-DATE   AVAILABLE   AGE
-  sparta-db-deployment   1/1     1            1           36s
-  ```
-
-  `kubectl get pod`
-
-  ```
-  NAME                                   READY   STATUS    RESTARTS   AGE
-  sparta-db-deployment-8f9578899-lw92j   1/1     Running   0          40s
+  NAME                                         READY   STATUS    RESTARTS   AGE
+  pod/sparta-db-deployment-8f9578899-lw92j     1/1     Running   0          40s
   ```
 
   The output for the PV and PVC will show that these are linked (`STATUS: Bound`).
@@ -447,6 +447,7 @@ Metrics Server collects resource data and is needed for autoscaling to function.
   ```
 
   with the following content (replace `<Docker Hub username>` with your username; the linked YAML file includes a working image):
+
   [`sparta-app-service-deploy.yml`](kubernetes/sparta-app-service-deploy.yml)
 
   ```yaml
@@ -520,18 +521,66 @@ Metrics Server collects resource data and is needed for autoscaling to function.
   replicaset.apps/sparta-db-deployment-8f9578899     1         1         1       25m
   ```
 
+### Create Kubernetes Horizontal Pod Autoscaler
+
+- Create a Kubernetes Horizontal Pod Autoscaler (HPA) configuration file in `~/sparta-k8s/` to limit the number of Sparta Test App pods to be minimum 2/maximum 10, and to scale based on CPU utilisation (as reported by the Metrics Server):
+
+  ```bash
+  nano sparta-k8s/sparta-app-hpa.yml
+  ```
+
+  with the following content:
+
+  [`sparta-app-hpa.yml`](kubernetes/sparta-app-hpa.yml)
+
+  ```yaml
+  apiVersion: autoscaling/v2
+  kind: HorizontalPodAutoscaler
+  metadata:
+    name: sparta-app-hpa
+  spec:
+    scaleTargetRef:
+      apiVersion: apps/v1
+      kind: Deployment
+      name: sparta-app-deployment
+    minReplicas: 2
+    maxReplicas: 10
+    metrics:
+      - type: Resource
+        resource:
+          name: cpu
+          target:
+            type: Utilization
+            averageUtilization: 50
+  ```
+
+- Create the HPA:
+  ```bash
+  kubectl apply -f sparta-k8s/sparta-app-hpa.yml
+  ```
+- Check HPA and pods:
+
+  ```bash
+  kubectl get hpa,pod
+  ```
+
+  Expected output:
+
+  ```
+  NAME                                                 REFERENCE                          TARGETS       MINPODS   MAXPODS   REPLICAS   AGE
+  horizontalpodautoscaler.autoscaling/sparta-app-hpa   Deployment/sparta-app-deployment   cpu: 1%/50%   2         10        2          2m38s
+
+  NAME                                         READY   STATUS    RESTARTS   AGE
+  pod/sparta-app-deployment-84b5cc845f-sx6wb   1/1     Running   0          30m
+  pod/sparta-app-deployment-84b5cc845f-wrlns   1/1     Running   0          2m23s
+  pod/sparta-db-deployment-8f9578899-lw92j     1/1     Running   0          54m
+  ```
+
+  This will show that the number of app pods has increased to the minimum (2) and that the HPA is linked to current CPU usage (1% in the output above).
+
 <!-- PROGRESS MARKER -->
 
-<!-- - Set up prerequisites
-  - scp YAML files to EC2
-
-
-
-
-
-
-  - `kubectl apply -f sparta-app-hpa.yml`
-
+<!--
 - Set up reverse proxy:
   - `sudo apt install nginx -y`
   - `minikube service sparta-app-svc --url` to get URL of app service

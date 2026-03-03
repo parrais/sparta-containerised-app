@@ -19,6 +19,8 @@
   - [Create Kubernetes database deployment, service, and PVC](#create-kubernetes-database-deployment-service-and-pvc)
   - [Create Kubernetes Sparta Test App deployment and service](#create-kubernetes-sparta-test-app-deployment-and-service)
   - [Create Kubernetes Horizontal Pod Autoscaler](#create-kubernetes-horizontal-pod-autoscaler)
+  - [Set up nginx reverse proxy](#set-up-nginx-reverse-proxy)
+  - [Seed the database](#seed-the-database)
 
 ## Overview
 
@@ -578,21 +580,65 @@ Metrics Server collects resource data and is needed for autoscaling to function.
 
   This will show that the number of app pods has increased to the minimum (2) and that the HPA is linked to current CPU usage (1% in the output above).
 
+### Set up nginx reverse proxy
+
+- Install nginx on the EC2 instance:
+  ```bash
+  sudo apt install nginx -y
+  ```
+- Get the internal URL of the Sparta Test App service:
+  ```bash
+  minikube service sparta-app-svc --url
+  ```
+  Expected output:
+  ```
+  http://<IP address>:30001
+  ```
+- Edit ngnix config to add a reverse proxy to the IP address given by `minikube service`:
+  ```bash
+  sudo sed -i '51c\proxy_pass http://<IP address from minikube service>:30001;' /etc/nginx/sites-available/default
+  ```
+- Restart nginx to apply the new configuration:
+  ```bash
+  sudo systemctl restart nginx
+  ```
+- Confirm the app is now available at `http://<public IP address>`, with `http://<public IP address>/posts` working (but showing an empty posts list).
+
+  ![Sparta Test App front page](images/screenshots/aws-sparta-app.png) ![Sparta Test App posts page (empty)](images/screenshots/aws-sparta-posts-blank.png)
+
+### Seed the database
+
+Seeding the database requires running the seeding command on one of the Sparta Test App pods.
+
+- Get the IDs of the Sparta Test App pods:
+  ```bash
+  kubectl get pod -l app=sparta-app
+  ```
+- Pass the command to seed the database to one of the pods using its alphanumeric ID in the previous output:
+
+  ```bash
+  kubectl exec -it pod/sparta-app-deployment-<pod-id> -- npm run postinstall
+  ```
+
+  Expected output:
+
+  ```
+  > sparta-test-app@1.0.1 postinstall
+  > node seeds/seed.js
+
+  Connected to database
+  Database cleared
+  Database seeded with 100 records
+  Database connection closed
+  ```
+
+- Confirm that `http://<public IP address>/posts` is now populated with posts:
+
+  ![Sparta Test App posts page](images/screenshots/aws-sparta-posts.png)
+
 <!-- PROGRESS MARKER -->
 
 <!--
-- Set up reverse proxy:
-  - `sudo apt install nginx -y`
-  - `minikube service sparta-app-svc --url` to get URL of app service
-  - In `/etc/nginx/sites-available/default`, under `location /` add `proxy_pass http://<ip address from minikube service>:30004;`
-  - `sudo systemctl restart nginx`
-
-- Seed database
-  - `kubectl exec -it pod/sparta-app-deployment-(pod-id) -- npm run postinstall`
-
-- Load testing
-  - Accessed `http://<EC2 external IP>/fibonacci/1` (and higher numbers) to generate load
-  - With `kubectl get hpa`, CPU increase and resultant increase in replicas observed.
 
 - minikube restarts on reboot
   - `sudo nano /etc/systemd/system/minikube.service`
@@ -616,6 +662,13 @@ Metrics Server collects resource data and is needed for autoscaling to function.
 
   - `sudo systemctl daemon-reload`
   - `sudo systemctl enable minikube.service`
+
+
+- Load testing
+  - Accessed `http://<EC2 external IP>/fibonacci/1` (and higher numbers) to generate load
+  - With `kubectl get hpa`, CPU increase and resultant increase in replicas observed.
+
+
 
 ## Commentary
 

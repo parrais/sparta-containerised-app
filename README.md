@@ -15,7 +15,9 @@
   - [Create Amazon Machine Image (AMI)](#create-amazon-machine-image-ami)
   - [Create Sparta Test App EC2 instance](#create-sparta-test-app-ec2-instance)
   - [Install Kubernetes Metrics Server](#install-kubernetes-metrics-server)
-  - [Create Persistent Volume](#create-persistent-volume)
+  - [Create Kubernetes Persistent Volume](#create-kubernetes-persistent-volume)
+  - [Create Kubernetes database deployment, service, and PVC](#create-kubernetes-database-deployment-service-and-pvc)
+  - [Create Kubernetes Sparta Test App deployment and service](#create-kubernetes-sparta-test-app-deployment-and-service)
 
 ## Overview
 
@@ -288,7 +290,9 @@ Metrics Server collects resource data and is needed for autoscaling to function.
   metrics-server   1/1     1            1           79s
   ```
 
-### Create Persistent Volume
+❗The Kubenetes configuration YAML files referred to below can all be found in the [`kubernetes`](kubernetes) directory of this repository.
+
+### Create Kubernetes Persistent Volume
 
 - Create a Kubernetes configuration file in `~/sparta-k8s/` for a PV of 100 MiB:
   ```bash
@@ -325,16 +329,207 @@ Metrics Server collects resource data and is needed for autoscaling to function.
   sparta-db-pv   100Mi      RWO            Retain           Available           standard       <unset>                          15s
   ```
 
+### Create Kubernetes database deployment, service, and PVC
+
+- Create a Kubernetes configuration file in `~/sparta-k8s/` to:
+  - Create a persistent volume claim to the PV just created
+  - Create a ClusterIP service (as this does not allow access from outside the Kubernetes cluster)
+  - Create a deployment for a single pod with the MongoDB image
+  ```bash
+  nano sparta-k8s/sparta-db-pvc-service-deploy.yml
+  ```
+  with the following content:
+  [`sparta-db-pvc-service-deploy.yml`](kubernetes/sparta-db-pvc-service-deploy.yml)
+  ```yaml
+  apiVersion: v1
+  kind: PersistentVolumeClaim
+  metadata:
+    name: sparta-db-pvc
+  spec:
+    accessModes:
+      - ReadWriteOnce
+    resources:
+      requests:
+        storage: 100Mi
+    storageClassName: standard
+    volumeName: sparta-db-pv
+  ---
+  apiVersion: v1
+  kind: Service
+  metadata:
+    name: sparta-db-svc
+  spec:
+    type: ClusterIP
+    ports:
+      - port: 27017
+        targetPort: 27017
+    selector:
+      app: sparta-db
+  ---
+  apiVersion: apps/v1
+  kind: Deployment
+  metadata:
+    name: sparta-db-deployment
+  spec:
+    replicas: 1
+    selector:
+      matchLabels:
+        app: sparta-db
+    template:
+      metadata:
+        labels:
+          app: sparta-db
+      spec:
+        volumes:
+          - name: sparta-db-storage
+            persistentVolumeClaim:
+              claimName: sparta-db-pvc
+        containers:
+          - name: sparta-db
+            image: mongo:7.0.6
+            ports:
+              - containerPort: 27017
+            volumeMounts:
+              - name: sparta-db-storage
+                mountPath: /data/db
+  ```
+- Create the PVC, service, and deployment:
+  ```bash
+  kubectl apply -f sparta-k8s/sparta-db-pvc-service-deploy.yml
+  ```
+- Check all created OK with `kubectl get` commands:
+
+  `kubectl get pv`
+
+  ```
+  NAME           CAPACITY   ACCESS MODES   RECLAIM POLICY   STATUS   CLAIM                   STORAGECLASS   VOLUMEATTRIBUTESCLASS   REASON   AGE
+  sparta-db-pv   100Mi      RWO            Retain           Bound    default/sparta-db-pvc   standard       <unset>                          22m
+  ```
+
+  `kubectl get pvc`
+
+  ```
+  NAME            STATUS   VOLUME         CAPACITY   ACCESS MODES   STORAGECLASS   VOLUMEATTRIBUTESCLASS   AGE
+  sparta-db-pvc   Bound    sparta-db-pv   100Mi      RWO            standard       <unset>                 20s
+  ```
+
+  `kubectl get svc sparta-db-svc`
+
+  ```
+  NAME            TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)     AGE
+  sparta-db-svc   ClusterIP   10.110.62.246   <none>        27017/TCP   32s
+  ```
+
+  `kubectl get deploy`
+
+  ```
+  NAME                   READY   UP-TO-DATE   AVAILABLE   AGE
+  sparta-db-deployment   1/1     1            1           36s
+  ```
+
+  `kubectl get pod`
+
+  ```
+  NAME                                   READY   STATUS    RESTARTS   AGE
+  sparta-db-deployment-8f9578899-lw92j   1/1     Running   0          40s
+  ```
+
+  The output for the PV and PVC will show that these are linked (`STATUS: Bound`).
+
+### Create Kubernetes Sparta Test App deployment and service
+
+- Create a Kubernetes configuration file in `~/sparta-k8s/` to:
+  - Create a NodePort service, accessible inside the Kubernetes cluster on port 3000, and outside the cluster (but within the EC2 instance) on port 30001
+  - Create a deployment for a pod with the Sparta Test App image
+
+  ```bash
+  nano sparta-k8s/sparta-app-service-deploy.yml
+  ```
+
+  with the following content (replace `<Docker Hub username>` with your username; the linked YAML file includes a working image):
+  [`sparta-app-service-deploy.yml`](kubernetes/sparta-app-service-deploy.yml)
+
+  ```yaml
+  apiVersion: v1
+  kind: Service
+  metadata:
+    name: sparta-app-svc
+  spec:
+    type: NodePort
+    ports:
+      - port: 3000
+        targetPort: 3000
+        nodePort: 30001
+    selector:
+      app: sparta-app
+  ---
+  apiVersion: apps/v1
+  kind: Deployment
+  metadata:
+    name: sparta-app-deployment
+  spec:
+    selector:
+      matchLabels:
+        app: sparta-app
+    template:
+      metadata:
+        labels:
+          app: sparta-app
+      spec:
+        containers:
+          - name: sparta-app
+            image: <Docker Hub username>/sparta-test-app:v1
+            ports:
+              - containerPort: 3000
+            resources:
+              requests:
+                cpu: 100m
+            env:
+              - name: DB_HOST
+                value: mongodb://sparta-db-svc:27017/posts
+  ```
+
+- Create the service and deployment:
+  ```bash
+  kubectl apply -f sparta-k8s/sparta-app-service-deploy.yml
+  ```
+- Check NodePort service, deployment and pod created OK:
+
+  ```bash
+  kubectl get all
+  ```
+
+  Expected output:
+
+  ```
+  NAME                                         READY   STATUS    RESTARTS   AGE
+  pod/sparta-app-deployment-84b5cc845f-sx6wb   1/1     Running   0          61s
+  pod/sparta-db-deployment-8f9578899-lw92j     1/1     Running   0          25m
+
+  NAME                     TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)          AGE
+  service/kubernetes       ClusterIP   10.96.0.1       <none>        443/TCP          5d23h
+  service/sparta-app-svc   NodePort    10.99.38.53     <none>        3000:30001/TCP   61s
+  service/sparta-db-svc    ClusterIP   10.110.62.246   <none>        27017/TCP        25m
+
+  NAME                                    READY   UP-TO-DATE   AVAILABLE   AGE
+  deployment.apps/sparta-app-deployment   1/1     1            1           61s
+  deployment.apps/sparta-db-deployment    1/1     1            1           25m
+
+  NAME                                               DESIRED   CURRENT   READY   AGE
+  replicaset.apps/sparta-app-deployment-84b5cc845f   1         1         1       61s
+  replicaset.apps/sparta-db-deployment-8f9578899     1         1         1       25m
+  ```
+
 <!-- PROGRESS MARKER -->
 
 <!-- - Set up prerequisites
   - scp YAML files to EC2
 
 
-- Start kubernetes services
 
-  - `kubectl apply -f sparta-db-pvc-service-deploy.yml`
-  - `kubectl apply -f sparta-app-service-deploy.yml`
+
+
+
   - `kubectl apply -f sparta-app-hpa.yml`
 
 - Set up reverse proxy:

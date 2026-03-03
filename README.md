@@ -14,14 +14,18 @@
     - [minikube](#minikube)
   - [Create Amazon Machine Image (AMI)](#create-amazon-machine-image-ami)
   - [Create Sparta Test App EC2 instance](#create-sparta-test-app-ec2-instance)
-  - [Install Kubernetes Metrics Server](#install-kubernetes-metrics-server)
-  - [Create Kubernetes Persistent Volume](#create-kubernetes-persistent-volume)
-  - [Create Kubernetes database deployment, service, and PVC](#create-kubernetes-database-deployment-service-and-pvc)
-  - [Create Kubernetes Sparta Test App deployment and service](#create-kubernetes-sparta-test-app-deployment-and-service)
-  - [Create Kubernetes Horizontal Pod Autoscaler](#create-kubernetes-horizontal-pod-autoscaler)
+  - [Kubernetes Deployments](#kubernetes-deployments)
+    - [Install Kubernetes Metrics Server](#install-kubernetes-metrics-server)
+    - [Create Kubernetes Persistent Volume](#create-kubernetes-persistent-volume)
+    - [Create Kubernetes database deployment, service, and PVC](#create-kubernetes-database-deployment-service-and-pvc)
+    - [Create Kubernetes Sparta Test App deployment and service](#create-kubernetes-sparta-test-app-deployment-and-service)
+    - [Create Kubernetes Horizontal Pod Autoscaler](#create-kubernetes-horizontal-pod-autoscaler)
   - [Set up nginx reverse proxy](#set-up-nginx-reverse-proxy)
   - [Seed the database](#seed-the-database)
   - [Set up minikube automatic restart](#set-up-minikube-automatic-restart)
+- [Testing](#testing)
+  - [Automatic restarting](#automatic-restarting)
+  - [Self-healing](#self-healing)
 
 ## Overview
 
@@ -270,7 +274,11 @@ This AMI with all Docker and Kubernetes required software can then be used for t
   minikube start
   ```
 
-### Install Kubernetes Metrics Server
+### Kubernetes Deployments
+
+❗The Kubenetes configuration YAML files referred to below can all be found in the [`kubernetes`](kubernetes) directory of this repository.
+
+#### Install Kubernetes Metrics Server
 
 Metrics Server collects resource data and is needed for autoscaling to function.
 
@@ -294,9 +302,7 @@ Metrics Server collects resource data and is needed for autoscaling to function.
   metrics-server   1/1     1            1           79s
   ```
 
-❗The Kubenetes configuration YAML files referred to below can all be found in the [`kubernetes`](kubernetes) directory of this repository.
-
-### Create Kubernetes Persistent Volume
+#### Create Kubernetes Persistent Volume
 
 - Create a Kubernetes configuration file in `~/sparta-k8s/` for a PV of 100 MiB:
 
@@ -338,7 +344,7 @@ Metrics Server collects resource data and is needed for autoscaling to function.
   sparta-db-pv   100Mi      RWO            Retain           Available           standard       <unset>                          15s
   ```
 
-### Create Kubernetes database deployment, service, and PVC
+#### Create Kubernetes database deployment, service, and PVC
 
 - Create a Kubernetes configuration file in `~/sparta-k8s/` to:
   - Create a persistent volume claim to the PV just created
@@ -439,7 +445,7 @@ Metrics Server collects resource data and is needed for autoscaling to function.
 
   The output for the PV and PVC will show that these are linked (`STATUS: Bound`).
 
-### Create Kubernetes Sparta Test App deployment and service
+#### Create Kubernetes Sparta Test App deployment and service
 
 - Create a Kubernetes configuration file in `~/sparta-k8s/` to:
   - Create a NodePort service, accessible inside the Kubernetes cluster on port 3000, and outside the cluster (but within the EC2 instance) on port 30001
@@ -524,7 +530,7 @@ Metrics Server collects resource data and is needed for autoscaling to function.
   replicaset.apps/sparta-db-deployment-8f9578899     1         1         1       25m
   ```
 
-### Create Kubernetes Horizontal Pod Autoscaler
+#### Create Kubernetes Horizontal Pod Autoscaler
 
 - Create a Kubernetes Horizontal Pod Autoscaler (HPA) configuration file in `~/sparta-k8s/` to limit the number of Sparta Test App pods to be minimum 2/maximum 10, and to scale based on CPU utilisation (as reported by the Metrics Server):
 
@@ -685,25 +691,58 @@ As standard, `minikube start` must be run after the instance restarts to make th
   sudo systemctl enable minikube.service
   ```
 
-<!--
 ## Testing
 
 ### Automatic restarting
 
+This was tested by stopping the EC2 instance from the AWS instance summary page, then starting it again after several minutes. The instance was given a new public IP address at this time.
+
+The Sparta Test App could be reached in a browser, and `kubectl get pods` could be successfully run from the instance's command line, showing that minikube was starting automatically on restart.
+
 ### Self-healing
+
+This was tested by deleting an application pod and confirming it was replaced.
+
+- Get all Sparta Test App pods running:
+  ```bash
+  kubectl get pod -l app=sparta-app
+  ```
+  Output:
+  ```
+  NAME                                     READY   STATUS    RESTARTS        AGE
+  sparta-app-deployment-84b5cc845f-njtq6   1/1     Running   0               3m30s
+  sparta-app-deployment-84b5cc845f-qwsp2   1/1     Running   0               3m30s
+  ```
+- Delete one of the pods:
+  ```bash
+  kubectl delete pod sparta-app-deployment-84b5cc845f-qwsp2
+  ```
+  Output:
+  ```
+  pod "sparta-app-deployment-84b5cc845f-qwsp2" deleted from default namespace
+  ```
+- Refresh the list of running pods:
+  ```bash
+  kubectl get pod -l app=sparta-app
+  ```
+  Output:
+  ```
+  NAME                                     READY   STATUS    RESTARTS        AGE
+  sparta-app-deployment-84b5cc845f-cwv4p   1/1     Running   0               8s
+  sparta-app-deployment-84b5cc845f-njtq6   1/1     Running   0               4m49s
+  ```
+
+A new pod has been automatically started to meet the minimum number of replicas running, following the deletion of an existing pod, showing that the self-healing functionality is working.
+
+<!--
 
 ### Persistent data
 
 ### Autoscaling
 
-
-
-
 - Load testing
   - Accessed `http://<EC2 external IP>/fibonacci/1` (and higher numbers) to generate load
   - With `kubectl get hpa`, CPU increase and resultant increase in replicas observed.
-
-
 
 ## Commentary
 

@@ -30,10 +30,14 @@
     - [Delete database](#delete-database)
     - [Delete PV \& PVC](#delete-pv--pvc)
   - [Autoscaling](#autoscaling)
+- [Commentary](#commentary)
+  - [Benefits and learnings](#benefits-and-learnings)
+  - [Challenges](#challenges)
+  - [Future opportunities](#future-opportunities)
 
 ## Overview
 
-This repo contains a user guide and configuration files to create a cloud-hosted deployment of a two-tier application, using Docker containerisation, Kubernetes orchestration, persistent volumes and automated horizontal scaling.
+This repo contains a user guide and configuration files to create a cloud-hosted deployment of a two-tier application, using Docker containerisation, Kubernetes orchestration, persistent volumes and automated horizontal scaling, plus results of testing the capabilities of the technology, and some commentary on the outcomes and opportunities.
 
 ### Architecture
 
@@ -154,7 +158,7 @@ This guide assumes the reader has (or can obtain) an AWS account and SSH key pai
   ```bash
   ssh -i ~/.ssh/<existing AWS key pair>.pem ubuntu@<EC2 IP address>
   ```
-- Ensure system up to date:
+- Ensure the instance is up to date:
   ```bash
   sudo apt update -y
   sudo apt upgrade -y
@@ -253,7 +257,7 @@ From the Instance summary page for the EC2 instance being worked on:
 - Name: `<user choice>-minikube-image`
 - Create image
 
-This AMI with all Docker and Kubernetes required software can then be used for the Sparta Test App, and any other Kubernetes deployments on EC2 needed in future.
+This AMI with all Docker and Kubernetes required software can then be used for the Sparta Test App, and any other Kubernetes deployments on EC2 needed in future. Once the AMI has been successfully created, the initial EC2 instance can be terminated.
 
 ### Create Sparta Test App EC2 instance
 
@@ -340,7 +344,7 @@ Metrics Server collects resource data and is needed for autoscaling to function.
   ```bash
   kubectl apply -f sparta-k8s/sparta-db-pv.yml
   ```
-- Check PV created OK:
+- Check the PV is created OK:
   ```bash
   kubectl get pv
   ```
@@ -709,7 +713,7 @@ The Sparta Test App could be reached in a browser, and `kubectl get pods` could 
 
 This was tested by deleting an application pod and confirming it was replaced.
 
-- Get all Sparta Test App pods running:
+- Get all Sparta Test App pods by running:
   ```bash
   kubectl get pod -l app=sparta-app
   ```
@@ -773,7 +777,7 @@ Two tests were run: deleting & recreating the database (service & deployment), a
   ```
 - On returning to the `/posts` page in the browser, the page worked and gave the same articles as previously.
 
-Therefore the data seeded to the database is persistent, despite deployments and PVs/PVs being stopped/deleted and restarted.
+Therefore the data seeded to the database is persistent, despite deployments and PVCs/PVs being stopped/deleted and restarted.
 
 ### Autoscaling
 
@@ -802,15 +806,27 @@ The autoscaling of the Sparta Test App can be tested with the `/fibonacci/<numbe
   ```
   The CPU load and number of pods can be seen rising and then falling.
 
-This test shows that the HPA successfully responded to the increased CPU requirement by creating more pods, which were then removed once the load had tailed off.
+This test shows that the HPA successfully responded to the increased CPU requirement by creating more pods, which were then removed once the load had reduced.
 
-<!--
 ## Commentary
 
-Contribution guidelines for future developers
+### Benefits and learnings
 
-Blockers – Suggestion: what was the issue, reason for the issue, solution
+This project was an excellent way to learn and practice using a number of linked technologies (Docker, Kubernetes, AWS) and to show their capabilities. It was a great demonstration of the power of being able to orchestrate the creation of a containerised application deployment (including autoscaling and persistent data) with a small number of YAML files and kubectl commands. Although there were a lot of steps needed to deliver the final working product, each step was manageable, and deliverables were tracked on a [Trello board](https://trello.com/b/9FzKnuFj/containerised-app-deployment) to ensure all items were covered and progress was visible.
 
-What you learnt
+### Challenges
 
-Benefits you saw personally from the project -->
+Some key challenges on the project were as follows:
+
+- There was a steep learning curve in terms of gaining familiarity with the construction of Kubernetes YAML files, and getting an overall understanding of the different components of Kubernetes. Outside of this project, a number of proofs of concept were built locally using Docker Desktop's Kubernetes cluster to gain more knowledge.
+- As we do not have a signed certificate, not disabling in the Metrics Server configuration led to the HPA not being able to detect CPU utilisation. Troubleshooting the cause of this error from the information available was time-consuming, and the eventual solution was not ideal.
+
+### Future opportunities
+
+There are a number of ways the progress in this project could be taken further:
+
+- This project uses a simple front-end/database application model; a more complex application (e.g. consisting of a front-end, back-end, cache, database, etc.) could be deployed.
+- This implementation uses AWS as IaaS, manually installing all Kubernetes dependencies on an EC2 instance. A deployment could use purpose-built AWS components (e.g. Amazon Elastic Kubernetes Service).
+- This implementation uses a 'static' Docker application image; it could be combined with a CI/CD pipeline to deploy development updates to pods.
+- As mentioned above, a secure application using signed certificates could avoid the need to disable certificate validation, and be a proof of concept for a production application.
+- The solution could be re-implemented on other cloud providers, e.g. Azure.

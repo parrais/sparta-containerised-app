@@ -26,6 +26,10 @@
 - [Testing](#testing)
   - [Automatic restarting](#automatic-restarting)
   - [Self-healing](#self-healing)
+  - [Persistent data](#persistent-data)
+    - [Delete database](#delete-database)
+    - [Delete PV \& PVC](#delete-pv--pvc)
+  - [Autoscaling](#autoscaling)
 
 ## Overview
 
@@ -243,7 +247,9 @@ This guide assumes the reader has (or can obtain) an AWS account and SSH key pai
 From the Instance summary page for the EC2 instance being worked on:
 
 - Select: Actions > Image and templates > Create image
+
   !['Create image' menu option](images/screenshots/aws-create-image.png)
+
 - Name: `<user choice>-minikube-image`
 - Create image
 
@@ -734,16 +740,71 @@ This was tested by deleting an application pod and confirming it was replaced.
 
 A new pod has been automatically started to meet the minimum number of replicas running, following the deletion of an existing pod, showing that the self-healing functionality is working.
 
-<!--
-
 ### Persistent data
+
+Two tests were run: deleting & recreating the database (service & deployment), and deleting & recreating the PV & PVC.
+
+#### Delete database
+
+- Delete the database service & deployment
+  ```bash
+  kubectl delete svc sparta-db-svc
+  kubectl delete deploy sparta-db-deployment
+  ```
+- On going to the `/posts` endpoint in the browser, a timeout error was received.
+- Recreate the database service & deployment
+  ```bash
+  kubectl apply -f sparta-k8s/sparta-db-pvc-service-deploy.yml
+  ```
+- On returning to the `/posts` page in the browser, the page worked and gave the same articles as previously.
+
+#### Delete PV & PVC
+
+- Delete the database service, deployment, and PVC, plus the PV
+  ```bash
+  kubectl delete -f sparta-db-pvc-service-deploy.yml
+  kubectl delete -f sparta-db-pv.yml
+  ```
+- On going to the `/posts` endpoint in the browser, a timeout error was received.
+- Recreate the database service & deployment
+  ```bash
+  kubectl apply -f sparta-k8s/sparta-db-pv.yml
+  kubectl apply -f sparta-k8s/sparta-db-pvc-service-deploy.yml
+  ```
+- On returning to the `/posts` page in the browser, the page worked and gave the same articles as previously.
+
+Therefore the data seeded to the database is persistent, despite deployments and PVs/PVs being stopped/deleted and restarted.
 
 ### Autoscaling
 
-- Load testing
-  - Accessed `http://<EC2 external IP>/fibonacci/1` (and higher numbers) to generate load
-  - With `kubectl get hpa`, CPU increase and resultant increase in replicas observed.
+The autoscaling of the Sparta Test App can be tested with the `/fibonacci/<number>` endpoint, which can be used to easily generate load without the need for automated tools and a large number of requests.
 
+- The `/fibonacci/1` endpoint was manually visited, and the number incremented (up to ~40) to generate CPU load on the app pods.
+- The scaling by the HPA was monitored before, during, and after the period of load generation:
+  ```bash
+  kubectl get hpa --watch
+  ```
+  Output:
+  ```
+  NAME             REFERENCE                          TARGETS         MINPODS   MAXPODS   REPLICAS   AGE
+  sparta-app-hpa   Deployment/sparta-app-deployment   cpu: 1%/50%     2         10        2          29m
+  sparta-app-hpa   Deployment/sparta-app-deployment   cpu: 2%/50%     2         10        2          29m
+  sparta-app-hpa   Deployment/sparta-app-deployment   cpu: 30%/50%    2         10        2          29m
+  sparta-app-hpa   Deployment/sparta-app-deployment   cpu: 249%/50%   2         10        2          29m
+  sparta-app-hpa   Deployment/sparta-app-deployment   cpu: 191%/50%   2         10        4          30m
+  sparta-app-hpa   Deployment/sparta-app-deployment   cpu: 30%/50%    2         10        8          30m
+  sparta-app-hpa   Deployment/sparta-app-deployment   cpu: 66%/50%    2         10        10         30m
+  sparta-app-hpa   Deployment/sparta-app-deployment   cpu: 5%/50%     2         10        10         30m
+  sparta-app-hpa   Deployment/sparta-app-deployment   cpu: 2%/50%     2         10        10         31m
+  sparta-app-hpa   Deployment/sparta-app-deployment   cpu: 1%/50%     2         10        10         31m
+  sparta-app-hpa   Deployment/sparta-app-deployment   cpu: 1%/50%     2         10        10         35m
+  sparta-app-hpa   Deployment/sparta-app-deployment   cpu: 1%/50%     2         10        2          35m
+  ```
+  The CPU load and number of pods can be seen rising and then falling.
+
+This test shows that the HPA successfully responded to the increased CPU requirement by creating more pods, which were then removed once the load had tailed off.
+
+<!--
 ## Commentary
 
 Contribution guidelines for future developers

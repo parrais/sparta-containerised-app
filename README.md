@@ -50,7 +50,7 @@ A single AWS EC2 instance is used to host all aspects of the application, includ
 - A Mongo database Kubernetes deployment and service, with a persistent volume claim (PVC) to the PV.
 - A Sparta Test App Kubernetes deployment and service, connected to the Mongo database, with horizontal pod autoscaling in place.
 
-<!-- INSERT DIAGRAM -->
+![Sparta Test App AWS/Kubernetes deployment layout](images/diagrams/sparta-k8s-architecture.png)
 
 ### The Sparta Test App
 
@@ -819,7 +819,7 @@ This project was an excellent way to learn and practice using a number of linked
 Some key challenges on the project were as follows:
 
 - There was a steep learning curve in terms of gaining familiarity with the construction of Kubernetes YAML files, and getting an overall understanding of the different components of Kubernetes. Outside of this project, a number of proofs of concept were built locally using Docker Desktop's Kubernetes cluster to gain more knowledge.
-- As we do not have a signed certificate, not disabling in the Metrics Server configuration led to the HPA not being able to detect CPU utilisation. Troubleshooting the cause of this error from the information available was time-consuming, and the eventual solution was not ideal.
+- As we do not have a signed certificate, not disabling certificate validation in the Metrics Server configuration led to the HPA not being able to detect CPU utilisation. Troubleshooting the cause of this error from the information available was time-consuming, and the eventual solution was not ideal.
 
 ### Future opportunities
 
